@@ -1,0 +1,367 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from scipy.io import wavfile\n",
+    "import matplotlib.pyplot as plt\n",
+    "import IPython.display as ipd\n",
+    "import numpy as np\n",
+    "\n",
+    "from librosa.util import buf_to_float\n",
+    "from librosa.display import waveplot, specshow\n",
+    "from librosa import amplitude_to_db, stft, power_to_db"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "fft_size = 512\n",
+    "sample_rate = 16000\n",
+    "n_mels = 64"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def play_wav(f_name):\n",
+    "    sr, wav_data = wavfile.read(f_name)\n",
+    "    ipd.display(ipd.Audio(f_name, rate=sr))\n",
+    "    \n",
+    "    return wav_data\n",
+    "    \n",
+    "def show_wav(f_name):\n",
+    "    sr, wav_data = wavfile.read(f_name)\n",
+    "    wav_data = buf_to_float(wav_data)\n",
+    "    plt.figure(figsize=(14, 4))\n",
+    "    plt.grid()\n",
+    "    waveplot(wav_data, sr=sr)\n",
+    "    \n",
+    "    return wav_data\n",
+    "    \n",
+    "def show_spec(f_name):\n",
+    "    sr, wav_data = wavfile.read(f_name)\n",
+    "    wav_data = buf_to_float(wav_data)\n",
+    "    spec = stft(wav_data, n_fft=fft_size)\n",
+    "    spec_db = amplitude_to_db(abs(spec))\n",
+    "    plt.figure(figsize=(14, 8))\n",
+    "    specshow(spec_db, sr=sr, x_axis='time', y_axis='hz')\n",
+    "    \n",
+    "    return spec"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Обратное преобразование Фурье (представляем сигнал в виде суммы гармоник): $$ x_n = {{1}\\over{N}}\\sum\\limits_{k=0}^{N-1} X_k e^{{{2\\pi i}\\over{N}} k n} $$\n",
+    "\n",
+    "Прямое преобразование Фурье: $$ X_k = \\sum\\limits_{n=0}^{N-1} x_n e^{-{{2\\pi i}\\over{N}} k n} $$\n",
+    "\n",
+    "Оконное преобразование Фурье: $$ F(k, m) = \\sum\\limits_{n=0}^{L - 1} x[n+m] w[n] e^{-i{{2 \\pi}\\over{L}} k n} $$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "f_name = './spec_expl.wav'\n",
+    "\n",
+    "play_wav(f_name)\n",
+    "show_wav(f_name)\n",
+    "spec = show_spec(f_name)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from librosa.core import fft_frequencies\n",
+    "from librosa.filters import mel\n",
+    "\n",
+    "from sklearn.preprocessing import MinMaxScaler"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Переход к мел шкале от частоты\n",
+    "$$ mel = 1127 \\ln(1 + {{freq}\\over{700}}) $$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def freq_to_mel(f):\n",
+    "    return 1127.0 * np.log(1.0 + f / 700.0)\n",
+    "\n",
+    "freq = np.arange(0, 8001)\n",
+    "mels = freq_to_mel(freq)\n",
+    "plt.figure(figsize=(8, 4))\n",
+    "plt.plot(freq, mels, label='мел(Гц)')\n",
+    "plt.plot(freq, freq, label='y=x')\n",
+    "plt.grid()\n",
+    "plt.legend()\n",
+    "plt.xlabel('Частота, Гц')\n",
+    "plt.ylabel('Мел')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "n_mels_demo = 10\n",
+    "# ---------------------\n",
+    "# Код, выдернутый из функции mel (https://librosa.github.io/librosa/_modules/librosa/filters.html#mel)\n",
+    "# для визуализации линейного размещения мел фильтров на мел оси\n",
+    "max_mel = freq_to_mel(sample_rate//2)\n",
+    "mel_f = np.linspace(0, sample_rate//2, n_mels_demo + 2)\n",
+    "\n",
+    "weights = np.zeros((n_mels_demo, int(1 + fft_size // 2)))\n",
+    "\n",
+    "fftfreqs = fft_frequencies(sr=sample_rate, n_fft=fft_size)\n",
+    "fdiff = np.diff(mel_f)\n",
+    "ramps = np.subtract.outer(mel_f, fftfreqs)\n",
+    "\n",
+    "for i in range(n_mels_demo):\n",
+    "    # lower and upper slopes for all bins\n",
+    "    lower = -ramps[i] / fdiff[i]\n",
+    "    upper = ramps[i+2] / fdiff[i+1]\n",
+    "\n",
+    "    # .. then intersect them with each other and zero\n",
+    "    weights[i] = np.maximum(0, np.minimum(lower, upper))\n",
+    "# ---------------------\n",
+    "\n",
+    "# Рисуем полученные фильтры на мел шкале\n",
+    "plt.figure(figsize=(14, 4))\n",
+    "plt.title('{} фильтров на мел-шкале'.format(n_mels_demo))\n",
+    "for f in weights:\n",
+    "    plt.plot(f)\n",
+    "plt.xlabel('Мел')\n",
+    "plt.grid()\n",
+    "freq_labels = [freq for freq in range(0, int(max_mel), 500)]\n",
+    "plt.xticks(ticks=np.linspace(0, fft_size//2 + 1, len(freq_labels)), labels=freq_labels)\n",
+    "plt.show()\n",
+    "\n",
+    "# Рисуем полученные фильтры на частотной шкале\n",
+    "mel_matrix = mel(sr=sample_rate, n_fft=fft_size, n_mels=n_mels_demo)\n",
+    "# делаем фильтры \"высотой\" единица\n",
+    "mel_matrix = MinMaxScaler().fit_transform(mel_matrix.T).T\n",
+    "\n",
+    "plt.figure(figsize=(14, 4))\n",
+    "plt.title('{} фильтров на частотной шкале'.format(n_mels_demo))\n",
+    "for f in mel_matrix:\n",
+    "    plt.plot(f)\n",
+    "plt.grid()\n",
+    "plt.xlabel('Частота, Гц')\n",
+    "freq_labels = [freq for freq in range(0, sample_rate//2 + 1, 1000)]\n",
+    "plt.xticks(ticks=np.linspace(0, fft_size//2 + 1, len(freq_labels)), labels=freq_labels)\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# теперь возьмем побольше фильтров, нарисуем один из первых на спектре речевого фрагмента нашей вавки\n",
+    "mel_matrix = mel(sr=sample_rate, n_fft=fft_size, n_mels=n_mels)\n",
+    "mel_matrix_ = MinMaxScaler().fit_transform(mel_matrix.T).T\n",
+    "\n",
+    "# Рисуем полученные фильтры на частотной шкале\n",
+    "plt.figure(figsize=(14, 4))\n",
+    "plt.title('{} фильтра на мел-шкале'.format(n_mels))\n",
+    "for f in mel_matrix_:\n",
+    "    plt.plot(f)\n",
+    "plt.grid()\n",
+    "plt.xlabel('Частота, Гц')\n",
+    "freq_labels = [freq for freq in range(0, sample_rate//2 + 1, 1000)]\n",
+    "plt.xticks(ticks=np.linspace(0, fft_size//2 + 1, len(freq_labels)), labels=freq_labels)\n",
+    "plt.show()\n",
+    "\n",
+    "# отдельный фильтр вместе со спектром\n",
+    "second_filter = mel_matrix_[2]\n",
+    "sixtyth_filter = mel_matrix_[59]\n",
+    "spec_part = np.log10(np.abs(spec[:, 100]))\n",
+    "spec_part -= spec_part.mean()\n",
+    "\n",
+    "plt.figure(figsize=(14, 4))\n",
+    "plt.plot(spec_part, label='Спектр')\n",
+    "plt.title('3-ий и 60-ый фильтр, изображенный на речевом спектре')\n",
+    "plt.plot(second_filter*2, label='Мел-фильтр 3')\n",
+    "plt.plot(sixtyth_filter*2, label='Мел-фильтр 60')\n",
+    "plt.legend()\n",
+    "plt.grid()\n",
+    "plt.xlabel('Частота, Гц')\n",
+    "freq_labels = [freq for freq in range(0, sample_rate//2 + 1, 1000)]\n",
+    "plt.xticks(ticks=np.linspace(0, fft_size//2 + 1, len(freq_labels)), labels=freq_labels)\n",
+    "\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print('Форма матрицы фильтров:', mel_matrix.shape)\n",
+    "print('Форма спектрограммы:', spec.shape)\n",
+    "\n",
+    "mel_spec = np.dot(mel_matrix, spec)\n",
+    "\n",
+    "print('Форма мел-спектрограммы:', mel_spec.shape)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "spec_db = amplitude_to_db(abs(spec))\n",
+    "plt.figure(figsize=(14, 4))\n",
+    "specshow(spec_db, sr=sample_rate, x_axis='time', y_axis='hz')\n",
+    "plt.title('Спектрограмма')\n",
+    "plt.show()\n",
+    "\n",
+    "mel_spec_db = amplitude_to_db(abs(mel_spec))\n",
+    "plt.figure(figsize=(14, 4))\n",
+    "plt.title('Мел-спектрограмма')\n",
+    "specshow(mel_spec_db, sr=sample_rate, x_axis='time', y_axis='mel')\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# SPEAKER RECOGNITION FROM RAW WAVEFORM WITH SINCNET\n",
+    "\n",
+    "https://github.com/mravanelli/SincNet/"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Одномерная свертка: $$ y[n] = x[n] * h[n] = \\sum\\limits_{k=0}^{L-1}{x[k]h[n-k]}  $$\n",
+    "\n",
+    "\n",
+    "Главная идея в параметрической свертке: $$ y[n] = x[n] * g[n, \\theta] $$\n",
+    "\n",
+    "Представим, что с помощью этой свертки мы хотим обратить внимание сети на какую-то конкретную полосу частот.\n",
+    "Добиться этого можно, используя прямогольные фильтры в частотной области.\n",
+    "$$ G(f, f_1, f_2) = rect({{f}\\over{2 f_2}}) - rect({{f}\\over{2 f_1}})  $$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def rect(w):\n",
+    "    _w = np.abs(w)\n",
+    "    res = np.ones(len(w)).astype(float)\n",
+    "    res[_w > 0.5] = 0.\n",
+    "    res[_w == 0.5] = 0.5\n",
+    "\n",
+    "    return res\n",
+    "\n",
+    "def G(f, f1, f2):\n",
+    "    return rect(0.5*f/f2) - rect(0.5*f/f1)\n",
+    "\n",
+    "f1 = 100\n",
+    "f2 = 120\n",
+    "\n",
+    "w = np.linspace(0, 350, 350)\n",
+    "plt.plot(w, G(w, f1, f2))\n",
+    "plt.grid()\n",
+    "plt.xlabel('Частота, Гц')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Чтобы перейти во временную область для данной фукнции, надо посчитать обратное преобразование Фурье для прямоугольной функции.\n",
+    "Оно рассчитывается аналитически и будет равно следующему выражению.\n",
+    "\n",
+    "\n",
+    "$$ g(n, f_1, f_2) = 2 f_2 sinc(2 \\pi f_2 n) - 2 f_1 sinc(2 \\pi f_1 n)$$\n",
+    "\n",
+    "$$ sinc(t) = {{\\sin(t)}\\over{t}}$$\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def sinc(t):\n",
+    "    return np.sin(t)/t\n",
+    "\n",
+    "def g(t, f1, f2):\n",
+    "    return 2*f2*sinc(2*np.pi*f2*t) - 2*f1*sinc(2*np.pi*f1*t)\n",
+    "t0 = 0.1\n",
+    "\n",
+    "t = np.linspace(-t0, t0, 300)\n",
+    "plt.plot(t, g(t, f1, f2))\n",
+    "plt.grid()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.5"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
